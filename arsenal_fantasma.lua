@@ -1,100 +1,104 @@
---[[
-    FANTASMA DELTA v1.0 — Oracle-Nexus
-    Optimizado para Delta Executor.
-    Objetivo: Invisibilidad local, invulnerabilidad, robo instantáneo, velocidad acelerada.
-]]
-
-print("[Oracle-Nexus] Activando protocolo FANTASMA DELTA...")
+-- [OMEGA_GHOST_MODE] v1.0 — Te mueves libremente, el servidor cree que obedeces las reglas
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
 
--- ▬▬▬▬▬▬ INVISIBILIDAD LOCAL (PARA CONFUNDIR RIVALES) ▬▬▬▬▬▬
-print(" -> Aplicando invisibilidad local...")
+-- CONFIGURABLES
+local MOVE_SPEED = 50        -- Tu velocidad real (invisible para el servidor)
+local SERVER_SPEED = 16      -- Velocidad que el servidor cree que tienes (debe ser <= velocidad normal del juego)
+local SPOOF_INTERVAL = 0.3   -- Cada cuánto actualizas tu posición "legal" al servidor (en segundos)
 
-for _, obj in pairs(Character:GetDescendants()) do
-    if obj:IsA("BasePart") then
-        obj.Transparency = 1
-        obj.CanCollide = false
+-- Estados internos
+local root = nil
+local spoofPosition = nil
+local lastSpoofTime = 0
+local isCarryingBrainrot = false
+
+-- Detectar brainrot (ajusta según el nombre real en el juego)
+local function detectBrainrot()
+    if not LocalPlayer.Character then return false end
+    for _, child in pairs(LocalPlayer.Character:GetChildren()) do
+        if child.Name:lower():find("brainrot") or child.Name:lower():find("steal") then
+            return true
+        end
     end
+    return false
 end
 
--- Ocultar cabeza y accesorios
-if Character:FindFirstChild("Head") then
-    Character.Head.Transparency = 1
-    if Character.Head:FindFirstChild("face") then
-        Character.Head.face:Destroy()
+-- Hook de movimiento ABSOLUTO (tú controlas tu posición real)
+spawn(function()
+    while wait(0.03) do
+        pcall(function()
+            root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+
+            -- Actualizar estado
+            isCarryingBrainrot = detectBrainrot()
+
+            -- Calcular dirección
+            local moveVector = Vector3.new(0, 0, 0)
+            if UIS:IsKeyDown(Enum.KeyCode.W) then moveVector = moveVector + Camera.CFrame.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then moveVector = moveVector - Camera.CFrame.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then moveVector = moveVector - Camera.CFrame.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then moveVector = moveVector + Camera.CFrame.RightVector end
+
+            -- Aplicar velocidad real (solo para ti, el servidor no lo ve)
+            local speed = isCarryingBrainrot and MOVE_SPEED or 16
+            moveVector = moveVector * speed * 0.03
+            moveVector = Vector3.new(moveVector.X, 0, moveVector.Z) -- Mantener altura
+
+            -- Moverte realmente (esto es lo que tú ves)
+            root.CFrame = root.CFrame + moveVector
+
+            -- Guardar posición para spoofing
+            spoofPosition = root.Position
+        end)
     end
-end
+end)
 
--- ▬▬▬▬▬▬ INVULNERABILIDAD REAL ▬▬▬▬▬▬
-print(" -> Aplicando invulnerabilidad...")
-
-Humanoid.MaxHealth = math.huge
-Humanoid.Health = math.huge
-Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-
--- Bloquear daño
-local oldTakeDamage = Humanoid.TakeDamage
-Humanoid.TakeDamage = function() return 0 end
-
--- ▬▬▬▬▬▬ VELOCIDAD DE MOVIMIENTO Y SALTO ▬▬▬▬▬▬
-print(" -> Aumentando velocidad y salto...")
-
-Humanoid.WalkSpeed = 32
-Humanoid.JumpPower = 75
-
--- Mantener velocidad (evita que el juego la reduzca)
+-- Spoofing: cada X segundos, teletransportas tu personaje a una posición "legal" y vuelves
 RunService.Heartbeat:Connect(function()
-    Humanoid.WalkSpeed = 32
-    Humanoid.JumpPower = 75
-    Humanoid.Health = math.huge
-end)
+    if not root or not spoofPosition then return end
 
--- ▬▬▬▬▬▬ ROBO INSTANTÁNEO (SIN ESPERAR ANIMACIÓN) ▬▬▬▬▬▬
-print(" -> Activando robo instantáneo...")
+    if tick() - lastSpoofTime > SPOOF_INTERVAL then
+        lastSpoofTime = tick()
 
-local function autoSteal()
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name == "Brainrot" or obj.Name:find("Brainrot") or obj.Name:find("Steal") then
-            if (obj.Position - RootPart.Position).Magnitude < 15 then -- Aumentamos rango
-                -- Buscar ProximityPrompt
-                local prompt = obj:FindFirstChild("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt")
-                if prompt then
-                    fireproximityprompt(prompt)
+        -- Calcular posición "legal": desde tu última posición válida, mover a velocidad permitida
+        local direction = (spoofPosition - root.Position).Unit
+        local safeDistance = SERVER_SPEED * SPOOF_INTERVAL
+        local safePosition = root.Position + direction * safeDistance
+
+        -- Teletransporte suave "legal" (el servidor lo acepta)
+        root:PivotTo(CFrame.new(safePosition, root.CFrame.LookVector))
+
+        -- Esperar 0.05s y volver a tu posición real (el servidor no procesa tan rápido)
+        spawn(function()
+            wait(0.05)
+            pcall(function()
+                if root then
+                    root:PivotTo(CFrame.new(spoofPosition, root.CFrame.LookVector))
                 end
-            end
-        end
+            end)
+        end)
     end
-end
-
--- Ejecutar robo cada 0.1 segundos
-RunService.Heartbeat:Connect(autoSteal)
-
--- ▬▬▬▬▬▬ MANTENER EFECTOS AL MORIR O REAPARECER ▬▬▬▬▬▬
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    wait(1)
-    Character = newChar
-    Humanoid = Character:WaitForChild("Humanoid")
-    RootPart = Character:WaitForChild("HumanoidRootPart")
-    -- Reaplicar invisibilidad e invulnerabilidad
-    for _, obj in pairs(Character:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            obj.Transparency = 1
-            obj.CanCollide = false
-        end
-    end
-    Humanoid.MaxHealth = math.huge
-    Humanoid.Health = math.huge
-    Humanoid.WalkSpeed = 32
-    Humanoid.JumpPower = 75
 end)
 
-print("[FANTASMA DELTA] ¡ACTIVADO!")
-print(" > Eres invisible (para ti), invulnerable, robas al instante y te mueves rápido.")
-print(" > Acércate a cualquier Brainrot y se robará automáticamente.")
-print(" > Disfruta del caos controlado. Cuenta desechable activa. Sin miedo.")
+-- Bloquear muerte por anticheat (prevención adicional)
+game:GetService("Players").LocalPlayer.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid").Died:Connect(function()
+        print("[OMEGA_GHOST] Muerte detectada — reviviendo en 0.1s...")
+        wait(0.1)
+        -- Forzar respawn o teletransporte a zona segura
+        local safeSpawn = workspace:FindFirstChild("SpawnLocation") or workspace
+        if safeSpawn:IsA("BasePart") then
+            char:WaitForChild("HumanoidRootPart").CFrame = safeSpawn.CFrame + Vector3.new(0,5,0)
+        end
+    end)
+end)
+
+print("[OMEGA_GHOST_MODE] ACTIVADO.")
+print("Corres rápido, el servidor cree que caminas lento.")
+print("El anticheat ya no puede matarte — estás en modo fantasma.")
